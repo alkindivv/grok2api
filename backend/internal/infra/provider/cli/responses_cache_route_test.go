@@ -48,6 +48,62 @@ func TestPrepareBuildPromptCacheRouteComplementsToolBearingRequest(t *testing.T)
 	}
 }
 
+func TestPrepareBuildPromptCacheRoutePreservesHermesResponsesTools(t *testing.T) {
+	body, route, err := prepareBuildPromptCacheRoute([]byte(`{
+		"model":"grok-4.5",
+		"instructions":"You are Hermes Agent.",
+		"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"write the file"}]}],
+		"store":false,
+		"reasoning":{"effort":"high","summary":"auto"},
+		"parallel_tool_calls":true,
+		"tool_choice":"auto",
+		"tools":[{
+			"type":"function",
+			"name":"write_file",
+			"description":"Write a file",
+			"strict":true,
+			"parameters":{
+				"type":"object",
+				"properties":{
+					"path":{"type":"string"},
+					"content":{"type":"string"}
+				},
+				"required":["path","content"],
+				"additionalProperties":false
+			}
+		}]
+	}`), "responses", "grok-4.5", "hermes-cache-key", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	tools := payload["tools"].([]any)
+	if len(tools) != 2 || stringField(tools[1].(map[string]any), "type") != "x_search" {
+		t.Fatalf("Hermes cache route tools = %#v", tools)
+	}
+	function := tools[0].(map[string]any)
+	parameters := function["parameters"].(map[string]any)
+	properties := parameters["properties"].(map[string]any)
+	required := parameters["required"].([]any)
+	if function["name"] != "write_file" || function["strict"] != true || len(properties) != 2 || len(required) != 2 {
+		t.Fatalf("Hermes function schema changed: %#v", function)
+	}
+	if payload["parallel_tool_calls"] != true || payload["tool_choice"] != "auto" || payload["store"] != false {
+		t.Fatalf("Hermes Responses controls changed: %#v", payload)
+	}
+	reasoning := payload["reasoning"].(map[string]any)
+	if reasoning["effort"] != "high" || reasoning["summary"] != "auto" {
+		t.Fatalf("Hermes reasoning controls changed: %#v", reasoning)
+	}
+	if _, ok := route.clientDeclaredTools["write_file"]; !ok || !route.filterXSearch {
+		t.Fatalf("Hermes cache route = %#v", route)
+	}
+}
+
 func TestPrepareBuildPromptCacheRoutePreservesLargeIntegers(t *testing.T) {
 	body, _, err := prepareBuildPromptCacheRoute([]byte(`{"input":"hello","metadata":{"sequence":9007199254740993}}`), "responses", "grok-4.5", "cache-key", false)
 	if err != nil {

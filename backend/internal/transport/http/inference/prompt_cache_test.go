@@ -77,6 +77,9 @@ func TestAllowBuildClientToolCacheRouteUsesKnownCLISignals(t *testing.T) {
 		{name: "claude", headers: http.Header{"X-Claude-Code-Session-Id": {"session"}}, want: true},
 		{name: "codex metadata", headers: http.Header{"X-Codex-Turn-Metadata": {`{"window_id":"window-1"}`}}, want: true},
 		{name: "codex user agent", headers: http.Header{"User-Agent": {"Codex Desktop/1.0"}}, want: true},
+		{name: "hermes grok session", headers: http.Header{"X-Grok-Conv-Id": {"hermes-session"}}, want: true},
+		{name: "hermes user agent", headers: http.Header{"User-Agent": {"Hermes-Agent/1.2.3"}}, want: true},
+		{name: "generic session signal is not enough", headers: http.Header{"X-Session-Id": {"generic-session"}}},
 		{name: "generic", headers: http.Header{"User-Agent": {"custom-client/1.0"}}},
 	}
 	for _, test := range tests {

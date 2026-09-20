@@ -169,7 +169,15 @@ func allowBuildClientToolCacheRoute(headers http.Header) bool {
 	if codexPromptCacheSeedFromHeaders(headers) != "" {
 		return true
 	}
-	return strings.Contains(strings.ToLower(headers.Get("User-Agent")), "codex")
+	// Hermes keeps its native agent harness on the xAI codex_responses transport.
+	// That transport emits x-grok-conv-id for stable sessions even when xAI's base
+	// URL is overridden to this gateway, where hostname-based xAI headers may no
+	// longer be installed automatically.
+	if normalizePromptCacheSeed(headers.Get("X-Grok-Conv-Id")) != "" {
+		return true
+	}
+	userAgent := strings.ToLower(strings.TrimSpace(headers.Get("User-Agent")))
+	return strings.Contains(userAgent, "codex") || strings.HasPrefix(userAgent, "hermes-agent/")
 }
 
 func isClaudeCodeTitleRequest(headers http.Header, body []byte) bool {
