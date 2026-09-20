@@ -315,6 +315,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	egressService.SetOperationsConfigInvalidator(egressManager)
 	egressManager.SetFailureProber(egressService.TestNode)
 	clientKeyService := clientkeyapp.NewService(clientKeyRepo, rateLimiter, concurrency, cfg.ClientKeyDefaults.RPMLimit, cfg.ClientKeyDefaults.MaxConcurrent, cipher)
+	if err := ensureBootstrapBuildClientKey(ctx, clientKeyService, cfg.BootstrapClientKey); err != nil {
+		if runtimeStore != nil {
+			_ = runtimeStore.Close()
+		}
+		database.Close()
+		return nil, fmt.Errorf("bootstrap client key: %w", err)
+	}
 	qualityGuardIdentity, err := clientKeyService.EnsureQualityGuardIdentity(ctx, cfg.QualityGuard.Enabled)
 	if err != nil {
 		if runtimeStore != nil {

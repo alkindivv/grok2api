@@ -183,6 +183,58 @@ func (s *Service) EnsureQualityGuardIdentity(ctx context.Context, enabled bool) 
 	return updated, nil
 }
 
+func (s *Service) EnsureBootstrapBuildKey(ctx context.Context, name, keyValue string) (clientkeydomain.Key, error) {
+	name = strings.TrimSpace(name)
+	keyValue = strings.TrimSpace(keyValue)
+	if name == "" && keyValue == "" {
+		return clientkeydomain.Key{}, nil
+	}
+	if name == "" || keyValue == "" {
+		return clientkeydomain.Key{}, invalidInput("bootstrap client key tidak lengkap")
+	}
+	prefix, ok := security.SplitClientKey(keyValue)
+	if !ok {
+		return clientkeydomain.Key{}, invalidInput("bootstrap client key format tidak valid")
+	}
+	if s.cipher == nil {
+		return clientkeydomain.Key{}, errors.New("client key cipher tidak dikonfigurasi")
+	}
+	hash := security.HashToken(keyValue)
+	value, err := s.keys.GetByPrefix(ctx, prefix)
+	if errors.Is(err, repository.ErrNotFound) {
+		encrypted, encryptErr := s.cipher.Encrypt(keyValue)
+		if encryptErr != nil {
+			return clientkeydomain.Key{}, encryptErr
+		}
+		value, err = s.keys.Create(ctx, clientkeydomain.Key{
+			Name: name, Prefix: prefix, SecretHash: hash, EncryptedSecret: encrypted, Enabled: true,
+			ProviderScope: clientkeydomain.ProviderScopeBuild, TierScope: clientkeydomain.TierScopeAll,
+		})
+	}
+	if err != nil {
+		return clientkeydomain.Key{}, err
+	}
+	if value.InternalKind != "" || subtle.ConstantTimeCompare([]byte(value.SecretHash), []byte(hash)) != 1 {
+		return clientkeydomain.Key{}, ErrConflict
+	}
+	value.Name = name
+	value.Enabled = true
+	value.ExpiresAt = nil
+	value.RPMLimit = 0
+	value.MaxConcurrent = 0
+	value.BillingLimitUSDTicks = 0
+	value.AllowModelAliases = false
+	value.AllowedModels = nil
+	value.ProviderScope = clientkeydomain.ProviderScopeBuild
+	value.TierScope = clientkeydomain.TierScopeAll
+	updated, err := s.keys.Update(ctx, value)
+	if err != nil {
+		return clientkeydomain.Key{}, err
+	}
+	s.authCache.deleteID(updated.ID)
+	return updated, nil
+}
+
 func (s *Service) createQualityGuardIdentity(ctx context.Context) (clientkeydomain.Key, error) {
 	if s.cipher == nil {
 		return clientkeydomain.Key{}, errors.New("客户端 Key 加密器未配置")

@@ -54,22 +54,23 @@ var buildForbiddenCodePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{
 
 // Config 表示后端运行配置。
 type Config struct {
-	Server            ServerConfig            `yaml:"server"`
-	Frontend          FrontendConfig          `yaml:"frontend"`
-	Database          DatabaseConfig          `yaml:"database"`
-	RuntimeStore      RuntimeStoreConfig      `yaml:"runtimeStore"`
-	Deployment        DeploymentConfig        `yaml:"deployment"`
-	Auth              AuthConfig              `yaml:"auth"`
-	Secrets           Secrets                 `yaml:"secrets"`
-	BootstrapAdmin    BootstrapAdminConfig    `yaml:"bootstrapAdmin"`
-	Provider          ProviderConfig          `yaml:"provider"`
-	Batch             BatchConfig             `yaml:"-"`
-	Media             MediaConfig             `yaml:"media"`
-	Routing           RoutingConfig           `yaml:"routing"`
-	Audit             AuditConfig             `yaml:"audit"`
-	QualityGuard      QualityGuardConfig      `yaml:"qualityGuard"`
-	ClientKeyDefaults ClientKeyDefaultsConfig `yaml:"clientKeyDefaults"`
-	Accounts          AccountsConfig          `yaml:"-"`
+	Server             ServerConfig             `yaml:"server"`
+	Frontend           FrontendConfig           `yaml:"frontend"`
+	Database           DatabaseConfig           `yaml:"database"`
+	RuntimeStore       RuntimeStoreConfig       `yaml:"runtimeStore"`
+	Deployment         DeploymentConfig         `yaml:"deployment"`
+	Auth               AuthConfig               `yaml:"auth"`
+	Secrets            Secrets                  `yaml:"secrets"`
+	BootstrapAdmin     BootstrapAdminConfig     `yaml:"bootstrapAdmin"`
+	BootstrapClientKey BootstrapClientKeyConfig `yaml:"bootstrapClientKey"`
+	Provider           ProviderConfig           `yaml:"provider"`
+	Batch              BatchConfig              `yaml:"-"`
+	Media              MediaConfig              `yaml:"media"`
+	Routing            RoutingConfig            `yaml:"routing"`
+	Audit              AuditConfig              `yaml:"audit"`
+	QualityGuard       QualityGuardConfig       `yaml:"qualityGuard"`
+	ClientKeyDefaults  ClientKeyDefaultsConfig  `yaml:"clientKeyDefaults"`
+	Accounts           AccountsConfig           `yaml:"-"`
 }
 
 type ServerConfig struct {
@@ -331,6 +332,11 @@ type BootstrapAdminConfig struct {
 	Password string `yaml:"password"`
 }
 
+type BootstrapClientKeyConfig struct {
+	Name    string `yaml:"name"`
+	KeyFile string `yaml:"keyFile"`
+}
+
 // Duration 支持在 YAML 中使用 10m、1h 等可读时间格式。
 type Duration time.Duration
 
@@ -448,6 +454,10 @@ func resolveRelativePaths(cfg *Config, configPath string) error {
 	staticPath := strings.TrimSpace(cfg.Frontend.StaticPath)
 	if staticPath != "" && !filepath.IsAbs(staticPath) {
 		cfg.Frontend.StaticPath = filepath.Clean(filepath.Join(baseDir, staticPath))
+	}
+	keyFile := strings.TrimSpace(cfg.BootstrapClientKey.KeyFile)
+	if keyFile != "" && !filepath.IsAbs(keyFile) {
+		cfg.BootstrapClientKey.KeyFile = filepath.Clean(filepath.Join(baseDir, keyFile))
 	}
 	return nil
 }
@@ -581,6 +591,11 @@ func (c Config) Validate() error {
 	}
 	if isExampleSecret(c.BootstrapAdmin.Password) {
 		return errors.New("bootstrapAdmin.password 不能使用示例占位值")
+	}
+	bootstrapClientName := strings.TrimSpace(c.BootstrapClientKey.Name)
+	bootstrapClientFile := strings.TrimSpace(c.BootstrapClientKey.KeyFile)
+	if (bootstrapClientName == "") != (bootstrapClientFile == "") {
+		return errors.New("bootstrapClientKey.name 和 bootstrapClientKey.keyFile 必须同时配置")
 	}
 	if c.Auth.AccessTokenTTL.Value() <= 0 || c.Auth.RefreshTokenTTL.Value() <= 0 {
 		return errors.New("JWT 有效期必须大于零")

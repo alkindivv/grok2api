@@ -58,6 +58,45 @@ func TestCreateUsesG2AClientKeyFormat(t *testing.T) {
 	}
 }
 
+func TestEnsureBootstrapBuildKeyIsStableAndBuildScoped(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "bootstrap-key.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(relational.NewClientKeyRepository(database), nil, nil, 60, 5, testCipher(t))
+	raw := "g2a_bootstrap_test-secret"
+
+	first, err := service.EnsureBootstrapBuildKey(ctx, "hermes-agent-3", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.EnsureBootstrapBuildKey(ctx, "hermes-agent-3", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == 0 || second.ID != first.ID || !second.Enabled {
+		t.Fatalf("first = %#v, second = %#v", first, second)
+	}
+	if second.ProviderScope != clientkeydomain.ProviderScopeBuild || second.TierScope != clientkeydomain.TierScopeAll {
+		t.Fatalf("bootstrap scope = providers:%v tiers:%v", second.ProviderScope, second.TierScope)
+	}
+	if second.RPMLimit != 0 || second.MaxConcurrent != 0 || second.ExpiresAt != nil {
+		t.Fatalf("bootstrap limits = rpm:%d concurrent:%d expires:%v", second.RPMLimit, second.MaxConcurrent, second.ExpiresAt)
+	}
+	authenticated, _, err := service.Authenticate(ctx, raw)
+	if err != nil || authenticated.ID != first.ID {
+		t.Fatalf("bootstrap authenticate = %#v, err = %v", authenticated, err)
+	}
+	if _, err := service.EnsureBootstrapBuildKey(ctx, "hermes-agent-3", "g2a_bootstrap_other-secret"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("prefix conflict error = %v", err)
+	}
+}
+
 func TestQualityGuardIdentityIsStableHiddenAndSystemManaged(t *testing.T) {
 	ctx := context.Background()
 	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "quality-guard-identity.db"))

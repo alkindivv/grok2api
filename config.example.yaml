@@ -39,6 +39,12 @@ bootstrapAdmin:
   # [必须修改] 首次启动前替换为强密码；管理员创建成功后建议删除本段。
   password: "replace-with-a-strong-password"
 
+# [按需启用] Headless/local agent 可在启动时确保一个稳定的 Grok Build client key。
+# name/keyFile 必须同时填写；首次启动创建 key 文件，后续启动复用。
+bootstrapClientKey:
+  name: ""
+  keyFile: ""
+
 frontend:
   # [通常不要修改] Go 服务同源托管的前端构建目录。
   staticPath: "./frontend/dist"
