@@ -26,21 +26,23 @@ type credentialImportDocument struct {
 }
 
 type importedCredentialEntry struct {
-	Provider     string `json:"provider"`
-	Name         string `json:"name"`
-	ClientID     string `json:"client_id"`
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	IDToken      string `json:"id_token"`
-	TokenType    string `json:"token_type"`
-	Scope        string `json:"scope"`
-	ExpiresAt    string `json:"expires_at"`
-	ExpiresIn    int64  `json:"expires_in"`
-	Email        string `json:"email"`
-	Subject      string `json:"sub"`
-	UserID       string `json:"user_id"`
-	PrincipalID  string `json:"principal_id"`
-	TeamID       string `json:"team_id"`
+	Provider          string `json:"provider"`
+	Name              string `json:"name"`
+	ClientID          string `json:"client_id"`
+	AccessToken       string `json:"access_token"`
+	AccessTokenCamel  string `json:"accessToken"`
+	RefreshToken      string `json:"refresh_token"`
+	RefreshTokenCamel string `json:"refreshToken"`
+	IDToken           string `json:"id_token"`
+	TokenType         string `json:"token_type"`
+	Scope             string `json:"scope"`
+	ExpiresAt         string `json:"expires_at"`
+	ExpiresIn         int64  `json:"expires_in"`
+	Email             string `json:"email"`
+	Subject           string `json:"sub"`
+	UserID            string `json:"user_id"`
+	PrincipalID       string `json:"principal_id"`
+	TeamID            string `json:"team_id"`
 }
 
 func marshalCredentials(values []provider.CredentialSeed) ([]byte, error) {
@@ -249,11 +251,17 @@ func normalizeImportedCredential(entry importedCredentialEntry) (provider.Creden
 	if providerName == "" {
 		providerName = credentialImportProvider
 	}
+	// 9Router exports Grok Build OAuth accounts as provider=grok-cli with
+	// camelCase token fields. Treat that as the same upstream identity so the
+	// original account dump can be imported without creating a second secrets file.
+	if providerName == "grok-cli" {
+		providerName = credentialImportProvider
+	}
 	if providerName != credentialImportProvider {
 		return provider.CredentialSeed{}, fmt.Errorf("暂不支持 Provider %q", entry.Provider)
 	}
-	accessToken := strings.TrimSpace(entry.AccessToken)
-	refreshToken := strings.TrimSpace(entry.RefreshToken)
+	accessToken := strings.TrimSpace(firstNonEmpty(entry.AccessToken, entry.AccessTokenCamel))
+	refreshToken := strings.TrimSpace(firstNonEmpty(entry.RefreshToken, entry.RefreshTokenCamel))
 	if accessToken == "" && refreshToken == "" {
 		return provider.CredentialSeed{}, fmt.Errorf("access_token 和 refresh_token 至少提供一个")
 	}

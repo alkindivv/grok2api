@@ -389,6 +389,30 @@ func TestParseImportedCredentialsBatch(t *testing.T) {
 	}
 }
 
+func TestParseImportedCredentials9RouterGrokCLIExport(t *testing.T) {
+	data := []byte(`[{
+		"id":"router-local-id",
+		"provider":"grok-cli",
+		"authType":"oauth",
+		"name":"account-1",
+		"email":"user@example.com",
+		"accessToken":"access-1",
+		"refreshToken":"refresh-1",
+		"isActive":true,
+		"priority":0
+	}]`)
+	values, err := parseImportedCredentials(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].Name != "account-1" || values[0].Email != "user@example.com" || values[0].AccessToken != "access-1" || values[0].RefreshToken != "refresh-1" {
+		t.Fatalf("9Router Grok CLI import = %#v", values)
+	}
+	if values[0].SourceKey == "" {
+		t.Fatal("9Router Grok CLI import missing source key")
+	}
+}
+
 func TestParseImportedCredentialsPlainRefreshTokens(t *testing.T) {
 	values, err := parseImportedCredentials([]byte("rt=refresh-one\nrefresh_token=refresh-two\nrefresh-one\n"))
 	if err != nil {
