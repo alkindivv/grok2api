@@ -9,25 +9,21 @@ import (
 	"testing"
 )
 
-func TestPrepareBuildPromptCacheRouteToolFree(t *testing.T) {
-	body, route, err := prepareBuildPromptCacheRoute([]byte(`{"model":"grok-4.5","input":"hello"}`), "responses", "grok-4.5", "cache-key", false)
+func TestPrepareBuildPromptCacheRouteToolFreeDoesNotInventTools(t *testing.T) {
+	original := []byte(`{"model":"grok-4.5","input":"hello"}`)
+	body, route, err := prepareBuildPromptCacheRoute(original, "responses", "grok-4.5", "cache-key", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		t.Fatal(err)
+	if string(body) != string(original) {
+		t.Fatalf("tool-free request changed: got=%s want=%s", body, original)
 	}
-	tools := payload["tools"].([]any)
-	if len(tools) != 2 || stringField(tools[0].(map[string]any), "type") != "web_search" || stringField(tools[1].(map[string]any), "type") != "x_search" {
-		t.Fatalf("tools = %#v", tools)
-	}
-	if payload["tool_choice"] != "none" || !route.filterXSearch || len(route.injectedToolTypes) != 2 {
-		t.Fatalf("route = %#v payload = %#v", route, payload)
+	if route.filterXSearch || len(route.injectedToolTypes) != 0 {
+		t.Fatalf("tool-free cache route invented hosted tools: %#v", route)
 	}
 }
 
-func TestPrepareBuildPromptCacheRouteComplementsToolBearingRequest(t *testing.T) {
+func TestPrepareBuildPromptCacheRoutePreservesToolBearingRequest(t *testing.T) {
 	body, route, err := prepareBuildPromptCacheRoute([]byte(`{
 		"model":"grok-4.5","input":"hello","tool_choice":"auto",
 		"tools":[{"type":"function","name":"Read","parameters":{"type":"object"}}]
@@ -40,11 +36,11 @@ func TestPrepareBuildPromptCacheRouteComplementsToolBearingRequest(t *testing.T)
 		t.Fatal(err)
 	}
 	tools := payload["tools"].([]any)
-	if len(tools) != 2 || stringField(tools[1].(map[string]any), "type") != "x_search" || payload["tool_choice"] != "auto" {
+	if len(tools) != 1 || stringField(tools[0].(map[string]any), "type") != "function" || payload["tool_choice"] != "auto" {
 		t.Fatalf("payload = %#v", payload)
 	}
-	if _, ok := route.clientDeclaredTools["Read"]; !ok || len(route.injectedToolTypes) != 1 || !route.filterXSearch {
-		t.Fatalf("route = %#v", route)
+	if _, ok := route.clientDeclaredTools["Read"]; !ok || len(route.injectedToolTypes) != 0 || route.filterXSearch {
+		t.Fatalf("cache route broadened client tools: %#v", route)
 	}
 }
 
@@ -82,8 +78,8 @@ func TestPrepareBuildPromptCacheRoutePreservesHermesResponsesTools(t *testing.T)
 		t.Fatal(err)
 	}
 	tools := payload["tools"].([]any)
-	if len(tools) != 2 || stringField(tools[1].(map[string]any), "type") != "x_search" {
-		t.Fatalf("Hermes cache route tools = %#v", tools)
+	if len(tools) != 1 {
+		t.Fatalf("Hermes cache route tools were broadened: %#v", tools)
 	}
 	function := tools[0].(map[string]any)
 	parameters := function["parameters"].(map[string]any)
@@ -99,8 +95,8 @@ func TestPrepareBuildPromptCacheRoutePreservesHermesResponsesTools(t *testing.T)
 	if reasoning["effort"] != "high" || reasoning["summary"] != "auto" {
 		t.Fatalf("Hermes reasoning controls changed: %#v", reasoning)
 	}
-	if _, ok := route.clientDeclaredTools["write_file"]; !ok || !route.filterXSearch {
-		t.Fatalf("Hermes cache route = %#v", route)
+	if _, ok := route.clientDeclaredTools["write_file"]; !ok || route.filterXSearch || len(route.injectedToolTypes) != 0 {
+		t.Fatalf("Hermes cache route changed capability surface: %#v", route)
 	}
 }
 
@@ -126,17 +122,18 @@ func TestPrepareBuildPromptCacheRouteDoesNotBroadenUntrustedFunctions(t *testing
 	}
 }
 
-func TestPrepareBuildPromptCacheRouteComplementsExistingSearch(t *testing.T) {
-	body, route, err := prepareBuildPromptCacheRoute([]byte(`{"input":"hello","tools":[{"type":"web_search"}]}`), "responses", "grok-4.5", "cache-key", false)
+func TestPrepareBuildPromptCacheRoutePreservesExistingWebSearch(t *testing.T) {
+	original := []byte(`{"input":"hello","tools":[{"type":"web_search"}]}`)
+	body, route, err := prepareBuildPromptCacheRoute(original, "responses", "grok-4.5", "cache-key", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), `"x_search"`) || !route.filterXSearch {
-		t.Fatalf("existing search route was not completed: body=%s route=%#v", body, route)
+	if string(body) != string(original) || route.filterXSearch || len(route.injectedToolTypes) != 0 {
+		t.Fatalf("existing web search was broadened: body=%s route=%#v", body, route)
 	}
 }
 
-func TestPrepareBuildPromptCacheRouteExtendsAllowedTools(t *testing.T) {
+func TestPrepareBuildPromptCacheRoutePreservesAllowedTools(t *testing.T) {
 	body, _, err := prepareBuildPromptCacheRoute([]byte(`{
 		"input":"hello",
 		"tools":[{"type":"function","name":"Read"}],
@@ -151,8 +148,8 @@ func TestPrepareBuildPromptCacheRouteExtendsAllowedTools(t *testing.T) {
 	}
 	choice := payload["tool_choice"].(map[string]any)
 	allowed := choice["tools"].([]any)
-	if len(allowed) != 2 || stringField(allowed[1].(map[string]any), "type") != "x_search" {
-		t.Fatalf("allowed tools = %#v", allowed)
+	if len(allowed) != 1 || stringField(allowed[0].(map[string]any), "type") != "function" || stringField(allowed[0].(map[string]any), "name") != "Read" {
+		t.Fatalf("allowed tools were broadened = %#v", allowed)
 	}
 }
 

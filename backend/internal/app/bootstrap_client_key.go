@@ -44,19 +44,27 @@ func ensureBootstrapBuildClientKey(ctx context.Context, service *clientkeyapp.Se
 	if err != nil {
 		return err
 	}
+	rollback := func(cause error) error {
+		if deleteErr := service.Delete(ctx, created.Key.ID); deleteErr != nil {
+			return errors.Join(cause, fmt.Errorf("rollback bootstrap client key: %w", deleteErr))
+		}
+		return cause
+	}
 	if err := os.MkdirAll(filepath.Dir(keyFile), 0o700); err != nil {
-		return fmt.Errorf("create bootstrap client key directory: %w", err)
+		return rollback(fmt.Errorf("create bootstrap client key directory: %w", err))
 	}
 	file, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return fmt.Errorf("create bootstrap client key file: %w", err)
+		return rollback(fmt.Errorf("create bootstrap client key file: %w", err))
 	}
 	if _, err := file.WriteString(created.Secret + "\n"); err != nil {
 		_ = file.Close()
-		return fmt.Errorf("write bootstrap client key file: %w", err)
+		_ = os.Remove(keyFile)
+		return rollback(fmt.Errorf("write bootstrap client key file: %w", err))
 	}
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("close bootstrap client key file: %w", err)
+		_ = os.Remove(keyFile)
+		return rollback(fmt.Errorf("close bootstrap client key file: %w", err))
 	}
 	return nil
 }

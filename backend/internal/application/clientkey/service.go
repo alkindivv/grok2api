@@ -217,22 +217,10 @@ func (s *Service) EnsureBootstrapBuildKey(ctx context.Context, name, keyValue st
 	if value.InternalKind != "" || subtle.ConstantTimeCompare([]byte(value.SecretHash), []byte(hash)) != 1 {
 		return clientkeydomain.Key{}, ErrConflict
 	}
-	value.Name = name
-	value.Enabled = true
-	value.ExpiresAt = nil
-	value.RPMLimit = 0
-	value.MaxConcurrent = 0
-	value.BillingLimitUSDTicks = 0
-	value.AllowModelAliases = false
-	value.AllowedModels = nil
-	value.ProviderScope = clientkeydomain.ProviderScopeBuild
-	value.TierScope = clientkeydomain.TierScopeAll
-	updated, err := s.keys.Update(ctx, value)
-	if err != nil {
-		return clientkeydomain.Key{}, err
-	}
-	s.authCache.deleteID(updated.ID)
-	return updated, nil
+	// Bootstrap is create-once. Once the key exists, administrator policy
+	// (enabled state, expiry, limits, scopes, and model allowlist) is authoritative
+	// and must survive restarts.
+	return value, nil
 }
 
 func (s *Service) createQualityGuardIdentity(ctx context.Context) (clientkeydomain.Key, error) {

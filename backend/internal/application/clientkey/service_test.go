@@ -97,6 +97,49 @@ func TestEnsureBootstrapBuildKeyIsStableAndBuildScoped(t *testing.T) {
 	}
 }
 
+func TestEnsureBootstrapBuildKeyPreservesExistingPolicy(t *testing.T) {
+	ctx := context.Background()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "bootstrap-key-policy.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(relational.NewClientKeyRepository(database), nil, nil, 60, 5, testCipher(t))
+	raw := "g2a_bootstrap_test-secret"
+
+	created, err := service.EnsureBootstrapBuildKey(ctx, "hermes-agent-3", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	rpm := 17
+	concurrent := 3
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	updated, err := service.Update(ctx, created.ID, UpdateInput{
+		Enabled: &disabled, RPMLimit: &rpm, MaxConcurrent: &concurrent, ExpiresAt: &expiresAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reconciled, err := service.EnsureBootstrapBuildKey(ctx, "hermes-agent-3", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconciled.ID != updated.ID {
+		t.Fatalf("bootstrap key id changed: got=%d want=%d", reconciled.ID, updated.ID)
+	}
+	if reconciled.Enabled != updated.Enabled || reconciled.RPMLimit != updated.RPMLimit || reconciled.MaxConcurrent != updated.MaxConcurrent {
+		t.Fatalf("bootstrap policy was overwritten: before=%#v after=%#v", updated, reconciled)
+	}
+	if reconciled.ExpiresAt == nil || !reconciled.ExpiresAt.Equal(*updated.ExpiresAt) {
+		t.Fatalf("bootstrap expiry was overwritten: before=%v after=%v", updated.ExpiresAt, reconciled.ExpiresAt)
+	}
+}
+
 func TestQualityGuardIdentityIsStableHiddenAndSystemManaged(t *testing.T) {
 	ctx := context.Background()
 	database, err := relational.OpenSQLite(ctx, filepath.Join(t.TempDir(), "quality-guard-identity.db"))

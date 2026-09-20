@@ -4,16 +4,59 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	clientkeyapp "github.com/chenyme/grok2api/backend/internal/application/clientkey"
 	accountdomain "github.com/chenyme/grok2api/backend/internal/domain/account"
 	modeldomain "github.com/chenyme/grok2api/backend/internal/domain/model"
+	"github.com/chenyme/grok2api/backend/internal/infra/config"
 	"github.com/chenyme/grok2api/backend/internal/infra/persistence/relational"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
+	"github.com/chenyme/grok2api/backend/internal/infra/security"
 )
+
+func TestBootstrapClientKeyRollsBackDatabaseWhenKeyFileCannotBeCreated(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	database, err := relational.OpenSQLite(ctx, filepath.Join(root, "bootstrap-client-key.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.InitializeSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cipher, err := security.NewCipher("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := clientkeyapp.NewService(relational.NewClientKeyRepository(database), nil, nil, 60, 5, cipher)
+	keyFile := filepath.Join(root, "client.key")
+	if err := os.Symlink(filepath.Join(root, "missing-target"), keyFile); err != nil {
+		t.Fatal(err)
+	}
+
+	err = ensureBootstrapBuildClientKey(ctx, service, config.BootstrapClientKeyConfig{
+		Name: "hermes-agent-3", KeyFile: keyFile,
+	})
+	if err == nil {
+		t.Fatal("expected bootstrap key-file creation failure")
+	}
+	if !strings.Contains(err.Error(), "create bootstrap client key file") {
+		t.Fatalf("bootstrap failed before key-file creation branch: %v", err)
+	}
+	values, total, listErr := service.List(ctx, 1, 20, "", clientkeyapp.ListFilter{})
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if total != 0 || len(values) != 0 {
+		t.Fatalf("orphan bootstrap key remained after file failure: total=%d values=%#v", total, values)
+	}
+}
 
 func TestReadinessStartupReportDoesNotExposeInternalErrors(t *testing.T) {
 	state := newStartupState(0)
