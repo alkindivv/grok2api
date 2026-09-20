@@ -27,7 +27,7 @@ Hermes uses the provider identity to enable xAI-specific Responses behavior, inc
 - stable `x-grok-conv-id` session affinity
 - Responses streaming rather than Chat Completions tool-call reconstruction
 
-grok2api recognizes the Hermes `x-grok-conv-id` signal as a trusted Build mixed-tool cache route. `Hermes-Agent/*` is also recognized as a fallback client identity.
+`x-grok-conv-id` carries stable Hermes session affinity into Grok Build. `Hermes-Agent/*` explicitly identifies the Hermes harness for narrowly scoped compatibility handling. Neither signal grants tools or broadens the client's declared capability surface.
 
 ## Hermes configuration
 
@@ -67,7 +67,7 @@ On the native path, grok2api keeps the parts of the Responses protocol that Herm
 | Function tools with JSON Schema | Preserved on `/v1/responses` |
 | Multi-parameter tools | Preserved as structured function schemas |
 | Tool call identity | Stable `call_id` is preserved |
-| Tool results | `function_call_output` is preserved |
+| Tool results | `function_call_output` is preserved; Hermes `terminal` JSON envelopes are rendered upstream in Grok Build's native model-facing `exit: N\nstdout` form |
 | Parallel tool calls | Preserved unless a specific upstream compatibility rule requires serialization |
 | Reasoning | Responses reasoning fields and encrypted reasoning replay are supported |
 | Streaming | Responses SSE is forwarded with compatibility normalization |
@@ -75,7 +75,7 @@ On the native path, grok2api keeps the parts of the Responses protocol that Herm
 | Multi-turn | Responses history and `previous_response_id` are supported |
 | Compaction state | grok2api's Responses compaction/replay support remains available |
 
-The internal Build cache route may temporarily add native `x_search` upstream. grok2api removes those internal routing tool calls from the downstream response so Hermes does not attempt to execute a server-side search as a local tool.
+Prompt-cache routing never invents hosted tools or broadens `tool_choice`; the client owns the capability surface. When a client explicitly declares an upstream-executed `x_search`, grok2api still filters the completed internal search subcalls from the downstream stream so Hermes does not execute them again as local tools.
 
 ## Verification
 
