@@ -68,6 +68,27 @@ func TestExtractPromptCacheSeedRejectsOversizedValues(t *testing.T) {
 	}
 }
 
+func TestHermesAgentClientRequiresHermesUserAgent(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers http.Header
+		want    bool
+	}{
+		{name: "hermes", headers: http.Header{"User-Agent": {"Hermes-Agent/grok2api"}}, want: true},
+		{name: "case insensitive", headers: http.Header{"User-Agent": {"hermes-agent/0.21.3"}}, want: true},
+		{name: "grok session alone", headers: http.Header{"X-Grok-Conv-Id": {"session"}}},
+		{name: "codex", headers: http.Header{"User-Agent": {"Codex Desktop/1.0"}}},
+		{name: "generic", headers: http.Header{"User-Agent": {"custom-client/1.0"}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isHermesAgentClient(test.headers); got != test.want {
+				t.Fatalf("isHermesAgentClient = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
 func TestAllowBuildClientToolCacheRouteUsesKnownCLISignals(t *testing.T) {
 	tests := []struct {
 		name    string

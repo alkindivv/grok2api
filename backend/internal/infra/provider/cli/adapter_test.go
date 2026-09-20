@@ -330,6 +330,90 @@ func TestForwardResponseMatchesGrokBuildHeadersAndPreservesReasoning(t *testing.
 	}
 }
 
+func TestForwardResponseFormatsHermesTerminalResultLikeNativeGrokBuild(t *testing.T) {
+	cipher, err := security.NewCipher(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := cipher.Encrypt("access-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var captured map[string]any
+	adapter := NewAdapter(Config{BaseURL: "https://cli-chat-proxy.grok.com/v1"}, cipher)
+	adapter.http.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(request.Body).Decode(&captured); err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_1","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}]}`)),
+			Request:    request,
+		}, nil
+	})
+	response, err := adapter.ForwardResponse(context.Background(), provider.ResponseResourceRequest{
+		Credential: account.Credential{ID: 7, Provider: account.ProviderBuild, EncryptedAccessToken: encrypted},
+		Method:     http.MethodPost, Path: "/responses", Model: "grok-4.5", NormalizeBody: true,
+		Operation: conversation.OperationResponses, HermesAgent: true,
+		Body: []byte(`{"model":"grok-4.5","tools":[{"type":"function","name":"terminal","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"],"additionalProperties":false}}],"input":[{"type":"function_call","call_id":"call-1","name":"terminal","arguments":"{\"command\":\"printf nonce\"}"},{"type":"function_call_output","call_id":"call-1","output":"{\"output\":\"nonce-123\",\"exit_code\":0,\"error\":null}"}]}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	input, ok := captured["input"].([]any)
+	if !ok || len(input) < 2 {
+		t.Fatalf("unexpected Hermes upstream payload: %#v", captured)
+	}
+	if got := input[1].(map[string]any)["output"]; got != "exit: 0\nnonce-123" {
+		t.Fatalf("Hermes terminal output on upstream wire = %#v", got)
+	}
+}
+
+func TestForwardResponsePreservesNonHermesTerminalResult(t *testing.T) {
+	cipher, err := security.NewCipher(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := cipher.Encrypt("access-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var captured map[string]any
+	adapter := NewAdapter(Config{BaseURL: "https://cli-chat-proxy.grok.com/v1"}, cipher)
+	adapter.http.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(request.Body).Decode(&captured); err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_1","object":"response","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}]}`)),
+			Request:    request,
+		}, nil
+	})
+	response, err := adapter.ForwardResponse(context.Background(), provider.ResponseResourceRequest{
+		Credential: account.Credential{ID: 7, Provider: account.ProviderBuild, EncryptedAccessToken: encrypted},
+		Method:     http.MethodPost, Path: "/responses", Model: "grok-4.5", NormalizeBody: true,
+		Operation: conversation.OperationResponses,
+		Body:      []byte(`{"model":"grok-4.5","tools":[{"type":"function","name":"terminal","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"],"additionalProperties":false}}],"input":[{"type":"function_call","call_id":"call-1","name":"terminal","arguments":"{\"command\":\"printf nonce\"}"},{"type":"function_call_output","call_id":"call-1","output":"{\"output\":\"nonce-123\",\"exit_code\":0,\"error\":null}"}]}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	input, ok := captured["input"].([]any)
+	if !ok || len(input) < 2 {
+		t.Fatalf("unexpected upstream payload: %#v", captured)
+	}
+	if got := input[1].(map[string]any)["output"]; got != `{"output":"nonce-123","exit_code":0,"error":null}` {
+		t.Fatalf("non-Hermes terminal output changed = %#v", got)
+	}
+}
+
 func TestNormalizeGrokTurnIndex(t *testing.T) {
 	tests := []struct {
 		name  string

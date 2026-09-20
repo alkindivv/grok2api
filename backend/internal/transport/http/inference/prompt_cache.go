@@ -159,6 +159,14 @@ func normalizeRawPromptCacheSeed(raw json.RawMessage) string {
 	return normalizePromptCacheSeed(value)
 }
 
+func isHermesAgentClient(headers http.Header) bool {
+	if headers == nil {
+		return false
+	}
+	userAgent := strings.ToLower(strings.TrimSpace(headers.Get("User-Agent")))
+	return strings.HasPrefix(userAgent, "hermes-agent/")
+}
+
 func allowBuildClientToolCacheRoute(headers http.Header) bool {
 	if headers == nil {
 		return false
@@ -177,7 +185,7 @@ func allowBuildClientToolCacheRoute(headers http.Header) bool {
 		return true
 	}
 	userAgent := strings.ToLower(strings.TrimSpace(headers.Get("User-Agent")))
-	return strings.Contains(userAgent, "codex") || strings.HasPrefix(userAgent, "hermes-agent/")
+	return strings.Contains(userAgent, "codex") || isHermesAgentClient(headers)
 }
 
 func isClaudeCodeTitleRequest(headers http.Header, body []byte) bool {

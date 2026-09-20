@@ -358,6 +358,10 @@ type ResponseResourceRequest struct {
 	// AllowClientToolCacheRoute allows the Build native cache route to supplement existing client tools.
 	// This is a protocol compatibility signal, not a client authentication result.
 	AllowClientToolCacheRoute bool
+	// HermesAgent is true only for the explicit Hermes-Agent user agent. It
+	// enables narrowly scoped model-facing compatibility without affecting
+	// Grok Build, Codex, Claude Code, or generic Responses clients.
+	HermesAgent bool
 	// GrokTurnIndex is the explicit Grok Shell client turn; it is validated before Build egress and never fabricated by the server.
 	GrokTurnIndex string
 	IdempotencyID string

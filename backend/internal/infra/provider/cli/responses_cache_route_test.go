@@ -44,6 +44,65 @@ func TestPrepareBuildPromptCacheRoutePreservesToolBearingRequest(t *testing.T) {
 	}
 }
 
+func TestNormalizeHermesTerminalToolOutputsMatchesNativeGrokBuildPrompt(t *testing.T) {
+	body := []byte(`{
+		"model":"grok-4.5",
+		"input":[
+			{"type":"function_call","call_id":"call-1","name":"terminal","arguments":"{\"command\":\"printf nonce\"}"},
+			{"type":"function_call_output","call_id":"call-1","output":"{\"output\": \"abc123\", \"exit_code\": 0, \"error\": null}"},
+			{"type":"function_call","call_id":"call-2","name":"other_tool","arguments":"{}"},
+			{"type":"function_call_output","call_id":"call-2","output":"{\"output\": \"keep-json\", \"exit_code\": 0, \"error\": null}"}
+		]
+	}`)
+	got, changed, err := normalizeHermesTerminalToolOutputs(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("expected Hermes terminal output normalization")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(got, &payload); err != nil {
+		t.Fatal(err)
+	}
+	input := payload["input"].([]any)
+	terminal := input[1].(map[string]any)
+	if terminal["output"] != "exit: 0\nabc123" {
+		t.Fatalf("terminal output = %#v", terminal["output"])
+	}
+	other := input[3].(map[string]any)
+	if other["output"] != "{\"output\": \"keep-json\", \"exit_code\": 0, \"error\": null}" {
+		t.Fatalf("non-terminal output changed = %#v", other["output"])
+	}
+}
+
+func TestNormalizeHermesTerminalToolOutputsPreservesMalformedEnvelope(t *testing.T) {
+	body := []byte(`{"input":[{"type":"function_call","call_id":"call-1","name":"terminal","arguments":"{}"},{"type":"function_call_output","call_id":"call-1","output":"plain text"}]}`)
+	got, changed, err := normalizeHermesTerminalToolOutputs(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed || string(got) != string(body) {
+		t.Fatalf("malformed/non-Hermes envelope changed: changed=%v got=%s", changed, got)
+	}
+}
+
+func TestNormalizeHermesTerminalToolOutputsPreservesExitFailure(t *testing.T) {
+	body := []byte(`{"input":[{"type":"function_call","call_id":"call-1","name":"terminal","arguments":"{}"},{"type":"function_call_output","call_id":"call-1","output":"{\"output\":\"\",\"exit_code\":7,\"error\":null}"}]}`)
+	got, changed, err := normalizeHermesTerminalToolOutputs(body)
+	if err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(got, &payload); err != nil {
+		t.Fatal(err)
+	}
+	output := payload["input"].([]any)[1].(map[string]any)["output"]
+	if output != "exit: 7\n" {
+		t.Fatalf("failure output = %#v", output)
+	}
+}
+
 func TestPrepareBuildPromptCacheRoutePreservesHermesResponsesTools(t *testing.T) {
 	body, route, err := prepareBuildPromptCacheRoute([]byte(`{
 		"model":"grok-4.5",
